@@ -1,0 +1,12 @@
+.root-pane {
+    -fx-background-color: linear-gradient(to bottom, #dfe9f3, #ffffff);
+}
+
+.label {
+    -fx-font-size: 14px;
+}
+
+.button {
+    -fx-font-size: 14px;
+    -fx-padding: 6px 16px;
+}

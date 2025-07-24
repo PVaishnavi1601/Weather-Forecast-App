@@ -1,103 +1,131 @@
 package com.example.weatherapp;
 
-import javafx.application.Application;
-import javafx.geometry.Insets;
-import javafx.scene.Scene;
-import javafx.scene.control.*;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.VBox;
-import javafx.stage.Stage;
-
-import java.io.BufferedReader;
-import java.io.IOException;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.Properties;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import java.net.URLEncoder;
+import javafx.application.Application;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
+import javafx.scene.control.*;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.*;
+import javafx.stage.Stage;
 
 public class WeatherApp extends Application {
 
-    private String apiKey;
-    private String units;
+    private static final String API_KEY = "56d3860b57aa7aa36ce2bc9d4c9d0b14";
+
+    private TextField cityInput;
+    private Label temperatureLabel;
+    private Label weatherDescriptionLabel;
+    private ImageView weatherIconView;
 
     @Override
     public void start(Stage primaryStage) {
-        loadConfig();  // Load API key and units
+        primaryStage.setTitle("Weather Forecast App");
 
-        Label cityLabel = new Label("Enter City:");
-        TextField cityInput = new TextField();
-        Button getWeatherButton = new Button("Get Weather");
-        Label resultLabel = new Label();
+        // Input field
+        cityInput = new TextField();
+        cityInput.setPromptText("Enter city name");
+        cityInput.setPrefWidth(200);
 
-        getWeatherButton.setOnAction(event -> {
-            String city = cityInput.getText().trim();
-            if (city.isEmpty()) {
-                showAlert(Alert.AlertType.WARNING, "Error", "City name cannot be empty.");
-                return;
-            }
+        Button fetchButton = new Button("Get Weather");
+        fetchButton.setOnAction(e -> fetchWeather(cityInput.getText()));
 
-            try {
-                String weather = fetchWeather(city);
-                resultLabel.setText(weather);
-            } catch (Exception e) {
-                showAlert(Alert.AlertType.ERROR, "Error", "Failed to fetch weather data.\n" + e.getMessage());
-            }
+        // Toolbar buttons with icons
+        Button refreshButton = createIconButton("icons/refresh.png", "Refresh", () -> {
+            fetchWeather(cityInput.getText());
         });
 
-        HBox inputBox = new HBox(10, cityLabel, cityInput, getWeatherButton);
-        VBox root = new VBox(15, inputBox, resultLabel);
-        root.setPadding(new Insets(20));
+        Button helpButton = createIconButton("icons/help.png", "Help", () -> {
+            showAlert("Enter a city and click 'Get Weather' to see current conditions.");
+        });
 
-        Scene scene = new Scene(root, 400, 150);
-        primaryStage.setTitle("Weather Forecast App");
-        primaryStage.setScene(scene);
+        Button locationButton = createIconButton("icons/location.png", "Use Location", () -> {
+            // Placeholder — simulate location as "Chennai"
+            fetchWeather("Chennai");
+        });
+
+        HBox toolbar = new HBox(10, cityInput, fetchButton, refreshButton, helpButton, locationButton);
+        toolbar.setAlignment(Pos.CENTER);
+        toolbar.setPadding(new Insets(15));
+
+        // Display labels
+        temperatureLabel = new Label("Temperature: ");
+        weatherDescriptionLabel = new Label("Condition: ");
+        weatherIconView = new ImageView();
+        weatherIconView.setFitHeight(100);
+        weatherIconView.setFitWidth(100);
+
+        VBox displayBox = new VBox(10, temperatureLabel, weatherDescriptionLabel, weatherIconView);
+        displayBox.setAlignment(Pos.CENTER);
+
+        VBox layout = new VBox(20, toolbar, displayBox);
+        layout.setAlignment(Pos.CENTER);
+        layout.setPadding(new Insets(20));
+
+        primaryStage.setScene(new Scene(layout, 500, 400));
         primaryStage.show();
     }
 
-    private void loadConfig() {
-        Properties props = new Properties();
+    private void fetchWeather(String city) {
+        if (city == null || city.isEmpty()) {
+            showAlert("Please enter a city name.");
+            return;
+        }
+
         try {
-            props.load(getClass().getClassLoader().getResourceAsStream("application.properties"));
-            apiKey = props.getProperty("api.key");
-            units = props.getProperty("units", "metric");
-        } catch (IOException | NullPointerException e) {
-            showAlert(Alert.AlertType.ERROR, "Config Error", "Could not load application.properties: " + e.getMessage());
+            String apiUrl = "https://api.openweathermap.org/data/2.5/weather?q=" +
+                    URLEncoder.encode(city, "UTF-8") +
+                    "&appid=" + API_KEY + "&units=metric";
+
+            HttpURLConnection connection = (HttpURLConnection) new URL(apiUrl).openConnection();
+            connection.setRequestMethod("GET");
+
+            if (connection.getResponseCode() == 200) {
+                InputStreamReader reader = new InputStreamReader(connection.getInputStream());
+                JsonObject response = JsonParser.parseReader(reader).getAsJsonObject();
+
+                double temp = response.getAsJsonObject("main").get("temp").getAsDouble();
+                String description = response.getAsJsonArray("weather")
+                        .get(0).getAsJsonObject().get("description").getAsString();
+                String iconCode = response.getAsJsonArray("weather")
+                        .get(0).getAsJsonObject().get("icon").getAsString();
+
+                temperatureLabel.setText("Temperature: " + temp + "°C");
+                weatherDescriptionLabel.setText("Condition: " + description);
+
+                String iconUrl = "https://openweathermap.org/img/wn/" + iconCode + "@2x.png";
+                weatherIconView.setImage(new Image(iconUrl));
+            } else {
+                showAlert("City not found. Please check the spelling.");
+            }
+
+        } catch (Exception e) {
+            showAlert("Error fetching weather: " + e.getMessage());
         }
     }
 
-    private String fetchWeather(String city) throws IOException {
-        String urlString = "https://api.openweathermap.org/data/2.5/weather?q=" + city + "&appid=" + apiKey + "&units=" + units;
-        URL url = new URL(urlString);
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod("GET");
+    private Button createIconButton(String iconPath, String tooltipText, Runnable action) {
+        ImageView icon = new ImageView(new Image(getClass().getResourceAsStream("/" + iconPath)));
+        icon.setFitWidth(24);
+        icon.setFitHeight(24);
 
-        int responseCode = conn.getResponseCode();
-        if (responseCode != 200) {
-            throw new IOException("API request failed with response code: " + responseCode);
-        }
-
-        BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-        StringBuilder response = new StringBuilder();
-        String inputLine;
-        while ((inputLine = in.readLine()) != null) {
-            response.append(inputLine);
-        }
-        in.close();
-
-        JsonObject jsonObject = JsonParser.parseString(response.toString()).getAsJsonObject();
-        String weatherDescription = jsonObject.getAsJsonArray("weather")
-                                              .get(0).getAsJsonObject()
-                                              .get("description").getAsString();
-        double temp = jsonObject.getAsJsonObject("main").get("temp").getAsDouble();
-
-        return "Weather in " + city + ": " + weatherDescription + ", " + temp + "°C";
+        Button button = new Button();
+        button.setGraphic(icon);
+        button.setTooltip(new Tooltip(tooltipText));
+        button.setOnAction(e -> action.run());
+        return button;
     }
 
-    private void showAlert(Alert.AlertType alertType, String title, String message) {
-        Alert alert = new Alert(alertType);
-        alert.setTitle(title);
+    private void showAlert(String message) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Weather Info");
         alert.setHeaderText(null);
         alert.setContentText(message);
         alert.showAndWait();
